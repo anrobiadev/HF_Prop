@@ -2,7 +2,7 @@
 
 ![RVSU Logo](https://img.shields.io/badge/Developed%20for-RVSU-red)
 ![License](https://img.shields.io/badge/License-MIT-blue.svg)
-![Version](https://img.shields.io/badge/Version-2.4-green)
+![Version](https://img.shields.io/badge/Version-2.7.1-green)
 
 A professional Android application designed for radio amateurs, providing real-time ionospheric propagation data and solar indices. This tool was developed specifically for RVSU (Radioamatori Voluntari în Situații de Urgență) to assist in emergency communications and daily radio operations.
 
@@ -23,7 +23,7 @@ A professional Android application designed for radio amateurs, providing real-t
 * LGDC / GIRO: Real-time ionosonde data (foF2).
 * HamQSL (N0NBH): Graphical summaries.
 
-## 🤝 Developed for RVSU
+## 🤝 Developed for RVSU but not only
 
 This application is a dedicated tool for the Radioamatori Voluntari în Situații de Urgență (RVSU) community, designed for reliability during emergency deployments and routine training.
 
