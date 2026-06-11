@@ -3,8 +3,6 @@ package com.example.hfpropagation
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
-import android.os.Bundle
-import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebSettings
 import android.webkit.WebView
@@ -14,7 +12,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -22,20 +19,62 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import java.text.SimpleDateFormat
-import java.util.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
 fun OnlineDataTab(s: AppStrings) {
     val context = LocalContext.current
-    val isConnected = remember { isOnline(context) }
+    val coroutineScope = rememberCoroutineScope()
 
-    // Salvează starea internă a WebView-ului (istoric, scroll, cache)
-    val webViewStateBundle = rememberSaveable { Bundle() }
+    // Connection and loading state
+    var isConnected    by remember { mutableStateOf(isOnline(context)) }
+    var isLoading      by remember { mutableStateOf(false) }
+    var showCachedNote by remember { mutableStateOf(false) }
+    var htmlContent    by remember { mutableStateOf("") }
+    var lastUpdateText by remember {
+        mutableStateOf(StorageUtils.formatOnlineUpdateTime(
+            StorageUtils.loadOnlineImagesTimestamp(context)))
+    }
 
-    // Păstrăm informația despre ultima actualizare
-    var lastUpdateText by rememberSaveable { mutableStateOf("") }
-    val dateFormatter = remember { SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()) }
+    // Decide what to show on first composition
+    LaunchedEffect(Unit) {
+        isConnected = isOnline(context)
+        when {
+            isConnected -> {
+                // Download fresh images in background, then cache them
+                isLoading = true
+                withContext(Dispatchers.IO) {
+                    val ok = StorageUtils.downloadAndCacheImages(context)
+                    withContext(Dispatchers.Main) {
+                        isLoading = false
+                        htmlContent = if (ok) {
+                            lastUpdateText = StorageUtils.formatOnlineUpdateTime(
+                                StorageUtils.loadOnlineImagesTimestamp(context))
+                            showCachedNote = false
+                            StorageUtils.buildCachedHtml(context)
+                        } else if (StorageUtils.hasCachedImages(context)) {
+                            // Download failed but we have a cache
+                            showCachedNote = true
+                            StorageUtils.buildCachedHtml(context)
+                        } else {
+                            // No cache, no fresh data
+                            ""
+                        }
+                    }
+                }
+            }
+            StorageUtils.hasCachedImages(context) -> {
+                // Offline but cached images available
+                showCachedNote = true
+                htmlContent = StorageUtils.buildCachedHtml(context)
+            }
+            else -> {
+                // Offline and no cache
+                htmlContent = ""
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -47,10 +86,37 @@ fun OnlineDataTab(s: AppStrings) {
         Text(
             text = s.titlu,
             style = MaterialTheme.typography.titleLarge,
-            modifier = Modifier.padding(bottom = 16.dp)
+            modifier = Modifier.padding(bottom = 8.dp)
         )
 
-        if (isConnected || !webViewStateBundle.isEmpty) {
+        // Cached images note banner
+        if (showCachedNote) {
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer)
+            ) {
+                Text(
+                    text = s.cachedImagesNote,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+            }
+        }
+
+        // Loading indicator
+        if (isLoading) {
+            Box(
+                modifier = Modifier.fillMaxWidth().height(200.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator()
+            }
+        }
+
+        // WebView with cached or live content
+        if (htmlContent.isNotEmpty() && !isLoading) {
             AndroidView(
                 factory = { ctx ->
                     WebView(ctx).apply {
@@ -58,77 +124,46 @@ fun OnlineDataTab(s: AppStrings) {
                             ViewGroup.LayoutParams.MATCH_PARENT,
                             ViewGroup.LayoutParams.MATCH_PARENT
                         )
-
                         setBackgroundColor(0)
-                        setLayerType(View.LAYER_TYPE_SOFTWARE, null)
-
-                        webViewClient = object : WebViewClient() {
-                            override fun onPageFinished(view: WebView?, url: String?) {
-                                super.onPageFinished(view, url)
-                                // Salvăm starea în bundle imediat ce s-a încărcat
-                                lastUpdateText = dateFormatter.format(Date())
-                                saveState(webViewStateBundle)
-                            }
-                        }
-
+                        webViewClient = object : WebViewClient() {}
                         settings.apply {
-                            javaScriptEnabled = true
+                            javaScriptEnabled   = false  // not needed for local images
                             setSupportZoom(true)
                             builtInZoomControls = true
                             displayZoomControls = false
-                            useWideViewPort = true
+                            useWideViewPort     = true
                             loadWithOverviewMode = true
-
-                            // Optimizare Cache pentru persistență
-                            domStorageEnabled = true
-                            cacheMode = WebSettings.LOAD_CACHE_ELSE_NETWORK
+                            allowFileAccess     = true   // needed for file:// URLs
+                            cacheMode           = WebSettings.LOAD_NO_CACHE
                         }
-
-                        // Dacă avem stare salvată, o restaurăm, altfel încărcăm HTML-ul
-                        if (!webViewStateBundle.isEmpty) {
-                            restoreState(webViewStateBundle)
-                        } else {
-                            val htmlData = """
-                                <html>
-                                <head>
-                                    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-                                    <style>
-                                        body { margin:0; padding:0; display:flex; flex-direction: column; justify-content: flex-start; align-items: center; background-color:transparent; }
-                                        img { max-width: 100%; height: auto; margin-bottom: 15px; }
-                                    </style>
-                                </head>
-                                <body>
-                                    <img src="https://www.hamqsl.com/solar101vhfper.php">
-                                    <img src="https://www.hamqsl.com/solar101pic.php">
-                                    <img src="https://www.hamqsl.com/solarmuf.php">
-                                </body>
-                                </html>
-                            """.trimIndent()
-                            loadDataWithBaseURL(null, htmlData, "text/html", "UTF-8", null)
-                        }
+                        loadDataWithBaseURL(
+                            "file://", htmlContent, "text/html", "UTF-8", null)
                     }
                 },
                 update = { webView ->
-
+                    webView.loadDataWithBaseURL(
+                        "file://", htmlContent, "text/html", "UTF-8", null)
                 },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(600.dp)
+                    .height(620.dp)
             )
-        } else {
+        }
+
+        // No content at all
+        if (htmlContent.isEmpty() && !isLoading) {
             Box(
-                modifier = Modifier.fillMaxWidth().height(50.dp),
+                modifier = Modifier.fillMaxWidth().height(80.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
                     text = s.noInternetTitle,
                     style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(bottom = 16.dp)
+                    color = MaterialTheme.colorScheme.error
                 )
             }
             Box(
-                modifier = Modifier.fillMaxWidth().height(200.dp),
+                modifier = Modifier.fillMaxWidth().height(150.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
@@ -140,11 +175,12 @@ fun OnlineDataTab(s: AppStrings) {
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
-        if (lastUpdateText.isNotEmpty()) {
+        // Last update timestamp
+        if (lastUpdateText.isNotEmpty() && lastUpdateText != "—") {
             Text(
-                text = s.lastUpdate + " $lastUpdateText",
+                text = "${s.lastUpdate} $lastUpdateText",
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary,
@@ -163,8 +199,8 @@ fun OnlineDataTab(s: AppStrings) {
 }
 
 private fun isOnline(context: Context): Boolean {
-    val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-    val network = connectivityManager.activeNetwork ?: return false
-    val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
-    return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    val network = cm.activeNetwork ?: return false
+    val caps = cm.getNetworkCapabilities(network) ?: return false
+    return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
 }

@@ -144,4 +144,104 @@ object StorageUtils {
         sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
         return sdf.format(java.util.Date(timestampMs))
     }
+
+    // ─── ONLINE IMAGES CACHE ─────────────────────────────────────────────────────
+    private const val ONLINE_CACHE_DIR  = "online_cache"
+    private const val PREF_IMG_TIMESTAMP = "online_images_timestamp"
+
+    private val IMAGE_URLS = listOf(
+        "solar_vhf"  to "https://www.hamqsl.com/solar101vhfper.php",
+        "solar_hf"   to "https://www.hamqsl.com/solar101pic.php",
+        "solar_muf"  to "https://www.hamqsl.com/solarmuf.php"
+    )
+
+    fun getCacheDir(context: Context): java.io.File {
+        return java.io.File(context.filesDir, ONLINE_CACHE_DIR).also { it.mkdirs() }
+    }
+
+    fun getCachedImageFile(context: Context, key: String): java.io.File {
+        return java.io.File(getCacheDir(context), "$key.png")
+    }
+
+    fun hasCachedImages(context: Context): Boolean {
+        return IMAGE_URLS.all { (key, _) -> getCachedImageFile(context, key).exists() }
+    }
+
+    fun saveOnlineImagesTimestamp(context: Context, timestampMs: Long) {
+        getPrefs(context).edit().putLong(PREF_IMG_TIMESTAMP, timestampMs).apply()
+    }
+
+    fun loadOnlineImagesTimestamp(context: Context): Long {
+        return getPrefs(context).getLong(PREF_IMG_TIMESTAMP, 0L)
+    }
+
+    fun formatOnlineUpdateTime(timestampMs: Long): String {
+        if (timestampMs == 0L) return "—"
+        val sdf = java.text.SimpleDateFormat("dd.MM.yyyy HH:mm 'UTC'", java.util.Locale.US)
+        sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
+        return sdf.format(java.util.Date(timestampMs))
+    }
+
+    // Descarca si salveaza toate imaginile (rulat pe IO thread)
+    // Returneaza true daca cel putin una a fost salvata cu succes
+    fun downloadAndCacheImages(context: Context): Boolean {
+        var anySuccess = false
+        val cacheDir = getCacheDir(context)
+        for ((key, url) in IMAGE_URLS) {
+            try {
+                val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+                conn.connectTimeout = 10000
+                conn.readTimeout    = 15000
+                conn.setRequestProperty("User-Agent", "HFProp/3.0 Android")
+                conn.connect()
+                if (conn.responseCode == 200) {
+                    val bytes = conn.inputStream.readBytes()
+                    java.io.File(cacheDir, "$key.png").writeBytes(bytes)
+                    anySuccess = true
+                }
+                conn.disconnect()
+            } catch (e: Exception) {
+                android.util.Log.w("OnlineCache", "Failed to download $key: ${e.message}")
+            }
+        }
+        if (anySuccess) {
+            saveOnlineImagesTimestamp(context, System.currentTimeMillis())
+        }
+        return anySuccess
+    }
+
+    // Genera HTML cu imaginile din cache local (file:// URLs)
+    fun buildCachedHtml(context: Context): String {
+        val cacheDir = getCacheDir(context)
+        val sb = StringBuilder()
+        for ((key, _) in IMAGE_URLS) {
+            val file = java.io.File(cacheDir, "$key.png")
+            if (file.exists()) sb.append("<img src='file://${file.absolutePath}'><br>")
+        }
+        return "<html><head><meta name='viewport' content='width=device-width,initial-scale=1.0'>"
+            .plus("<style>body{margin:0;padding:8px;display:flex;flex-direction:column;")
+            .plus("align-items:center;background:transparent;}")
+            .plus("img{max-width:100%;height:auto;margin-bottom:15px;}</style></head>")
+            .plus("<body>${sb}</body></html>")
+    }
+
+    fun buildLiveHtml(): String {
+        return """
+            <html>
+            <head>
+                <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+                <style>
+                    body { margin:0; padding:0; display:flex; flex-direction:column;
+                           align-items:center; background-color:transparent; }
+                    img  { max-width:100%; height:auto; margin-bottom:15px; }
+                </style>
+            </head>
+            <body>
+                <img src="https://www.hamqsl.com/solar101vhfper.php">
+                <img src="https://www.hamqsl.com/solar101pic.php">
+                <img src="https://www.hamqsl.com/solarmuf.php">
+            </body>
+            </html>
+        """.trimIndent()
+    }
 }

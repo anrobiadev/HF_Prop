@@ -76,6 +76,8 @@ data class AppStrings(
     val lastIonoUpdate: String,
     val engineTitle: String,
     val helpEngine: String,
+    val stationUnavailable: String,
+    val cachedImagesNote: String,
 )
 
 val EnglishStrings = AppStrings(
@@ -157,6 +159,8 @@ val EnglishStrings = AppStrings(
     noIonoData       = "No data — tap Auto-Fetch",
     lastIonoUpdate   = "Last ionosonde update:",
     engineTitle      = "7. Propagation Engine",
+    stationUnavailable = "Station unavailable",
+    cachedImagesNote   = "Showing cached images — no internet connection",
     helpEngine       = "CCIR/ITU engine: foF2 + MUF(D) fetched from GIRO FastChar API (/fastchar/getbest), 2 requests per station with 2s delay. IRI-2016 lookup table for foF2 interpolation (3 SSN x 12 months x 24h x 17lat x 18lon). D-layer absorption: George & Bradley (1974). SNR: ITU-R P.533/P.372. Reliability: joint MUF/LUF/SNR probability. NVIS: reliability boost for f < foF2 at distances < 500km. Sources: SIDC SILSO, DRAO Penticton, NOAA SWPC, GIRO LGDC."
 )
 
@@ -237,6 +241,8 @@ val RomanianStrings = AppStrings(
     noIonoData       = "Lipsa date — apasa Descarcare Date",
     lastIonoUpdate   = "Ultima actualizare ionosonda:",
     engineTitle      = "7. Motorul de Calcul",
+    stationUnavailable = "Stație indisponibilă",
+    cachedImagesNote   = "Se afișează imaginile salvate — fără conexiune internet",
     helpEngine       = "Motor CCIR/ITU: foF2 + MUF(D) de la GIRO FastChar API, 2 cereri per statie cu delay 2s. Tabel IRI-2016 pentru interpolarea foF2 (3 SSN x 12 luni x 24h x 17lat x 18lon). Absorbtie D-layer: George & Bradley (1974). SNR: ITU-R P.533/P.372. Fiabilitate: probabilitate combinata MUF/LUF/SNR. NVIS: bonus pentru f < foF2 la distante < 500km. Surse: SIDC SILSO, DRAO Penticton, NOAA SWPC, GIRO LGDC."
 )
 
@@ -317,5 +323,7 @@ val HungarianStrings = AppStrings(
     noIonoData       = "Nincs adat — kattintson az Adatok letöltése gombra",
     lastIonoUpdate   = "Utolsó ionoszonda frissítés:",
     engineTitle      = "7. Terjedési Motor",
+    stationUnavailable = "Állomás nem elérhető",
+    cachedImagesNote   = "Gyorsítótárazott képek megjelenítése — nincs internetkapcsolat",
     helpEngine       = "CCIR/ITU motor: foF2 + MUF(D) a GIRO FastChar API-bol, 2 keresest/allomas 2s delayel. IRI-2016 tablazat foF2 interpolaciohoz. D-reteg: George & Bradley (1974). SNR: ITU-R P.533/P.372. Megbizhatosag: egyuttes MUF/LUF/SNR valoszinuseg. NVIS: bisztatasa f < foF2-nel 500km alatt. Adatforrasok: SIDC SILSO, DRAO Penticton, NOAA SWPC, GIRO LGDC."
 )

@@ -185,6 +185,7 @@ object SolarUtils {
                 Log.d("GIRO", "foF2 $code: $lastFoF2 MHz @ $lastTime")
             } catch (e: Exception) {
                 Log.e("GIRO", "foF2 error $code: ${e.message}")
+                lastFoF2 = -2.0  // -2 = station unavailable (fetch failed)
             }
 
             // Delay 2 secunde intre request-uri (cerinta LGDC)
@@ -216,7 +217,11 @@ object SolarUtils {
             // Delay 2 secunde inainte de urmatoarea statie
             Thread.sleep(2000L)
 
-            if (lastFoF2 > 0) {
+            if (lastFoF2 == -2.0) {
+                // Station unavailable - mark with sentinel value
+                results[code] = StationData(-1.0, -1.0, -1.0)
+                Log.w("GIRO", "Station $code marked as unavailable")
+            } else if (lastFoF2 > 0) {
                 val mufUsed   = if (lastMuf > 0) lastMuf else lastFoF2 * 3.2
                 val m3000Used = if (lastFoF2 > 0 && lastMuf > 0) lastMuf / lastFoF2 else 3.2
                 results[code] = StationData(lastFoF2, mufUsed, m3000Used)

@@ -528,12 +528,17 @@ fun SettingsTab(
                     stationValues.forEach { (code, fof2) ->
                         val stName = SolarUtils.globalStationDatabase
                             .find { it.code == code }?.name ?: code
-                        val muf = stationMuf[code]
-                        val valueStr = if (muf != null)
-                            "foF2 ${String.format("%.2f", fof2)} MHz  |  MUF ${String.format("%.1f", muf)} MHz"
-                        else
-                            "foF2 ${String.format("%.2f", fof2)} MHz"
-                        StatusRow(stName, valueStr, true)
+                        if (fof2 < 0) {
+                            // Station unavailable (fetch failed)
+                            StatusRow(stName, s.stationUnavailable, false)
+                        } else {
+                            val muf = stationMuf[code]
+                            val valueStr = if (muf != null && muf > 0)
+                                "foF2 ${String.format("%.2f", fof2)} MHz  |  MUF ${String.format("%.1f", muf)} MHz"
+                            else
+                                "foF2 ${String.format("%.2f", fof2)} MHz"
+                            StatusRow(stName, valueStr, true)
+                        }
                     }
                 }
             }

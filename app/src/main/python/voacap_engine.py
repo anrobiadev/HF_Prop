@@ -27,14 +27,14 @@ from datetime import datetime, timezone
 EARTH_R       = 6371.0    # km
 F2_HEIGHT     = 300.0     # km virtual height F2
 E_HEIGHT      = 110.0     # km E layer
-MAX_HOP_KM    = 2000  # max distanta realista per hop F2
+MAX_HOP_KM    = 2000  # max realistic distance per F2 hop
 
 # ─────────────────────────────────────────────────────────────────────────────
-# INCARCAREA DATELOR CCIR
+# CCIR DATA LOADING
 # ─────────────────────────────────────────────────────────────────────────────
 _DATA_DIR = os.path.join(os.path.dirname(__file__), "DVoaData")
 
-# Verificare la import: afiseaza in Logcat (Android) sau consola (PC)
+# Startup check: prints to Logcat (Android) or console (PC)
 def _check_data_files():
     files_ok = 0
     files_missing = 0
@@ -54,8 +54,8 @@ def _check_data_files():
 _check_data_files()
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 1b. foF2 / M3000 DIN TABEL IRI2016
-# Prioritate fata de modelul analitic. Tabel generat cu generate_fof2_table.py
+# 1b. foF2 / M3000 FROM IRI2016 TABLE
+# Takes priority over the analytic model. Table generated with generate_fof2_table.py
 # ─────────────────────────────────────────────────────────────────────────────
 
 _TABLE_PATH = os.path.join(_DATA_DIR, "fof2_iri2016.npz")
@@ -78,11 +78,11 @@ def _load_table():
         lons_arr  = d["lons"].tolist()
         ssn_arr   = d["ssn_levels"].tolist()
 
-        # Log structura tabelului pentru diagnostic
+        # Log table shape for diagnostics
         print(f"[VOACAP] Tabel IRI2016: shape={fof2_arr.shape} "
               f"SSN={ssn_arr} lats={lats_arr[0]}..{lats_arr[-1]} "
               f"lons={lons_arr[0]}..{lons_arr[-1]}")
-        # Verifica daca foF2 variaza cu ora (index 2)
+        # Check that foF2 varies with hour (index 2)
         mid_ssn = len(ssn_arr)//2
         sample_var = float(fof2_arr[mid_ssn, 5, 12, 8, 2] - fof2_arr[mid_ssn, 5, 0, 8, 2])
         print(f"[VOACAP] Variatie diurna (HR12 vs HR0, SSN_mid, Jun, 0N/40E): {sample_var:.2f} MHz")
@@ -107,7 +107,7 @@ def _interp_table(ssn, month, hour, lat_deg, lon_deg):
     lats    = td["lats"]
     lons    = td["lons"]
 
-    # SSN interpolare liniara intre nivelurile [0, 100, 200]
+    # SSN linear interpolation between levels [0, 100, 200]
     ssn_c = max(0.0, min(200.0, float(ssn)))
     if ssn_c <= ssn_lev[0]:
         s_i, s_fr = 0, 0.0
@@ -123,14 +123,14 @@ def _interp_table(ssn, month, hour, lat_deg, lon_deg):
     m_i = int(month) - 1       # 0..11
     h_i = int(hour) % 24       # 0..23
 
-    # Lat interpolare liniara
+    # Latitude linear interpolation
     step_lat = lats[1] - lats[0]
     lat_c = max(lats[0], min(lats[-1], float(lat_deg)))
     lat_f = (lat_c - lats[0]) / step_lat
     la_i  = max(0, min(len(lats)-2, int(lat_f)))
     la_fr = lat_f - la_i
 
-    # Lon interpolare circulara
+    # Longitude circular interpolation
     step_lon = lons[1] - lons[0]
     lon_c = float(lon_deg) % 360.0
     lon_f = lon_c / step_lon
@@ -154,17 +154,17 @@ def _interp_table(ssn, month, hour, lat_deg, lon_deg):
     fof2_raw  = float(interp_cube(td["fof2"]))
     m3000     = max(2.5, min(4.5, float(interp_cube(td["m3000"]))))
 
-    # Amplificam variatia diurna la latitudini medii/nordice in vara
-    # IRI2016 tabelul are variatie mica la 45-60N in lunile 5-8
-    # Calculam media zilnica si amplificam deviatia de la medie
-    # ── Calibrare vs VOACAP (KN34al→KN37ix, Iunie 2026, SSN=61) ──
+    # Amplify diurnal variation at mid/high latitudes in summer
+    # IRI2016 table has small diurnal variation at 45-60N in months 5-8
+    # Compute daily mean and amplify deviation from mean
+    # ── Calibration vs VOACAP (KN34al→KN37ix, June 2026, SSN=61) ──
     lat_abs   = abs(float(lat_deg))
     lon_val   = float(lon_deg)
     hour_val  = int(hour)
     month_val = int(month)
     is_summer = 4 <= month_val <= 9
 
-    # 1. Scalare globala: IRI2016 supraestimeaza la lat>35 vara
+    # 1. Global scaling: IRI2016 overestimates foF2 at lat>35 in summer
     if lat_abs > 35 and is_summer:
         scale = 0.88
     elif lat_abs > 35:
@@ -173,8 +173,8 @@ def _interp_table(ssn, month, hour, lat_deg, lon_deg):
         scale = 1.0
     fof2_scaled = fof2_raw * scale
 
-    # 2. Evening enhancement: double-hump foF2 la latitudini medii vara
-    #    Peak secundar la ~19 LT, +12% (calibrat din VOACAP)
+    # 2. Evening enhancement: double-hump foF2 at mid-latitudes in summer
+    #    Secondary peak at ~19 LT, +8% (calibrated from VOACAP)
     import math as _math
     lst = (hour_val + lon_val / 15.0) % 24
     if lat_abs > 30 and is_summer:
@@ -186,9 +186,9 @@ def _interp_table(ssn, month, hour, lat_deg, lon_deg):
     return max(1.5, fof2), m3000
 
 
-# Cache: {month: (cr0, cr100)} pentru FOF2CCIR
+# Cache: {month: (cr0, cr100)} for FOF2CCIR
 _fof2_cache = {}
-# Cache: {month: grid_vals} pentru Coeff (M3000)
+# Cache: {month: grid_vals} for Coeff (M3000)
 _m3000_cache = {}
 
 def _load_fof2(month):
@@ -218,11 +218,11 @@ def _load_m3000(month):
         return None
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 1. foF2 — MODEL CCIR + IRI DIURNAL
+# 1. foF2 — CCIR MODEL + IRI DIURNAL
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Valori medii CCIR R12=0 si R12=100 per luna (din termenul k=0 al FOF2CCIR*.dat)
-# Reprezinta media globala diurna pe 24h
+# Mean CCIR values at R12=0 and R12=100 per month (from k=0 term of FOF2CCIR*.dat)
+# Represents the global 24-hour diurnal mean
 _CCIR_MEAN_R0 = {
     1:5.24, 2:5.89, 3:6.60, 4:6.49, 5:5.64, 6:5.31,
     7:4.77, 8:5.18, 9:6.04, 10:6.74, 11:6.37, 12:5.82
@@ -273,18 +273,18 @@ def ccir_foF2(lat_deg, lon_deg, ut_hour, month, ssn, doy):
     """
     r12 = max(0.0, min(250.0, float(ssn)))
 
-    # Scalare SSN (VOACAP formula non-liniara)
+    # SSN scaling (VOACAP non-linear formula)
     ap     = 1.0 + 0.0168*r12   - 0.0000324*r12*r12
     ap_100 = 1.0 + 0.0168*100.0 - 0.0000324*100.0*100.0
     ssn_scale = ap / ap_100
 
-    # Media lunara globala CCIR la R12=100
+    # Global monthly mean CCIR at R12=100
     mean_r0   = _CCIR_MEAN_R0.get(month, 6.0)
     mean_r100 = _CCIR_MEAN_R100.get(month, 9.0)
     foF2_global = mean_r0 + (mean_r100 - mean_r0) * ssn_scale
 
-    # Corectie latitudinala: foF2_mean scade cu latitudinea
-    # Calibrat pe masuratori IRI: la 48N media e ~0.85x media globala
+    # Latitude correction: foF2_mean decreases with latitude
+    # Calibrated from IRI measurements: at 48N mean is ~0.85x global mean
     lat_abs = abs(lat_deg)
     if lat_abs < 15:
         lat_mean_f = 1.05   # anomalie ecuatoriala
@@ -299,46 +299,46 @@ def ccir_foF2(lat_deg, lon_deg, ut_hour, month, ssn, doy):
 
     foF2_mean = foF2_global * lat_mean_f
 
-    # Corectie geografica locala din CCIR k=0 (delta fata de global)
+    # Local geographic correction from CCIR k=0 (delta from global mean)
     cr0, cr100 = _load_fof2(month)
     if cr0 is not None:
         G = _geo_basis(lat_deg, lon_deg)
         geo_r0   = sum(cr0[0][j]   * G[j] for j in range(13))
         geo_r100 = sum(cr100[0][j] * G[j] for j in range(13))
         geo_val  = geo_r0 + (geo_r100 - geo_r0) * ssn_scale
-        # Delta: deviatia locala de la media globala, limitata la +-20%
+        # Delta: local deviation from global mean, clamped to +-20%
         delta = geo_val - foF2_global
         delta = max(-foF2_mean*0.20, min(foF2_mean*0.20, delta))
         foF2_mean = max(1.5, foF2_mean + delta)
 
-    # Variatie diurna continua (fara discontinuitate la chi=90)
-    # Calibrata vs VOACAP: platou larg 9-20h, scadere lenta post-sunset
+    # Continuous diurnal variation (no discontinuity at chi=90)
+    # Calibrated vs VOACAP: wide plateau 9-20h, slow post-sunset decay
     chi = _solar_zenith(lat_deg, lon_deg, ut_hour, doy)
     cos_chi_raw = math.cos(math.radians(min(chi, 180.0)))
 
     is_sum_d = 4 <= int(month) <= 9
 
     if chi <= 90.0:
-        # Ziua: formula Chapman
+        # Daytime: Chapman formula
         cos_chi = max(0.0, cos_chi_raw)
         df_raw = 0.52 + 1.12 * (cos_chi ** 0.28)
     else:
-        # Post-sunset: scadere exponentiala cu tau dependent de sezon/lat
+        # Post-sunset: exponential decay with tau dependent on season/latitude
         excess = chi - 90.0
         if lat_abs > 30 and is_sum_d:
-            tau = 80.0   # vara la lat medii: ionosfera persista mult
+            tau = 80.0   # summer at mid-lat: ionosphere persists long after sunset
         elif lat_abs > 30:
-            tau = 35.0   # iarna
+            tau = 35.0   # winter
         else:
             tau = 25.0   # tropice
-        # Floor la 0.52 (valoarea de la chi=90 ziua)
+        # Floor at 0.52 (daytime value at chi=90)
         df_raw = 0.52 + 0.96 * math.exp(-excess / tau)
 
-    # Normalizare
+    # Normalisation
     if lat_abs < 30:
         norm_factor = 1.10
     elif lat_abs < 60 and is_sum_d:
-        norm_factor = 1.18   # vara: platou mai lat, normalizare mai mica
+        norm_factor = 1.18   # summer: wider plateau, smaller normalisation factor
     elif lat_abs < 60:
         norm_factor = 1.30
     else:
@@ -348,30 +348,30 @@ def ccir_foF2(lat_deg, lon_deg, ut_hour, month, ssn, doy):
 
     foF2 = foF2_mean * diurnal
 
-    # ── Calibrare VOACAP: scaling sezon + evening enhancement ─────────────
+    # ── VOACAP calibration: seasonal scaling + evening enhancement ─────
     m_int = int(month)
     is_summer  = 4 <= m_int <= 9
     is_winter  = m_int <= 2 or m_int >= 11
     is_transit = not is_summer and not is_winter
 
-    # Scalare globala calibrata vs VOACAP per sezon
-    # Vara: IRI supraestimeaza -> scalam jos
-    # Iarna: "anomalia de iarna" -> foF2 mai mare, nu scalăm
-    # Tranzitie: neutru
+    # Global scaling calibrated vs VOACAP per season
+    # Summer: IRI overestimates -> scale down
+    # Winter: "winter anomaly" -> foF2 higher, no downscale
+    # Transition seasons: neutral
     if lat_abs > 35 and is_summer:
-        # Scaling vara: mai agresiv la latitudini nordice, mai putin la mediterana
-        # lat=35-45: scale 0.92-0.88 (liniar)
-        # Noaptea (chi>85) scaling redus la jumatate - foF2 nocturn mai uniform
+        # Summer scaling: more aggressive at northern latitudes, less at Mediterranean
+        # lat=35-45: scale 0.92-0.88 (linear)
+        # Night (chi>85): scaling reduced — nocturnal foF2 is more uniform globally
         scale_s = 0.92 - (lat_abs - 35.0) / 10.0 * 0.04
         chi_now = _solar_zenith(lat_deg, lon_deg, int(ut_hour), int(doy))
         if chi_now > 85:
-            scale_s = 1.0 - (1.0 - scale_s) * 0.2  # noaptea: 20% din corectia de zi
+            scale_s = 1.0 - (1.0 - scale_s) * 0.2  # night: 20% of daytime correction
         foF2 *= max(0.85, scale_s)
     elif lat_abs > 35 and is_winter:
-        foF2 *= 1.25   # anomalia de iarna: foF2 considerabil mai mare iarna la mid-lat
-    # else: tranzitie si tropice - fara scalare
+        foF2 *= 1.25   # winter anomaly: foF2 significantly higher in winter at mid-latitudes
+    # else: transition seasons and tropics - no scaling
 
-    # Evening enhancement: double-hump la lat medii vara (+12% la ~19 LT)
+    # Evening enhancement: double-hump at mid-latitudes in summer (+12% at ~19 LT)
     if lat_abs > 30 and is_summer:
         lon_v = float(lon_deg)
         lst   = (float(ut_hour) + lon_v / 15.0) % 24
@@ -380,7 +380,7 @@ def ccir_foF2(lat_deg, lon_deg, ut_hour, month, ssn, doy):
     return max(1.5, round(foF2, 3))
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 2. M(3000)F2 — din grila Coeff*.dat
+# 2. M(3000)F2 — from Coeff*.dat grid
 # ─────────────────────────────────────────────────────────────────────────────
 
 def ccir_M3000(lat_deg, lon_deg, ut_hour, month, ssn):
@@ -394,7 +394,7 @@ def ccir_M3000(lat_deg, lon_deg, ut_hour, month, ssn):
         # Fallback analitic
         return _m3000_analytic(lat_deg, lon_deg, ut_hour, month)
 
-    # Grila: lat de la -80 la +80 pas 2.5 (65 pct), lon 0-360 pas 10 (37 pct)
+    # Grid: lat from -80 to +80 step 2.5 (65 pts), lon 0-360 step 10 (37 pts)
     lat_clamped = max(-80.0, min(80.0, lat_deg))
     lon_east    = lon_deg % 360.0
 
@@ -415,24 +415,24 @@ def ccir_M3000(lat_deg, lon_deg, ut_hour, month, ssn):
         return (v00*(1-lat_frac)*(1-lon_frac) + v01*(1-lat_frac)*lon_frac +
                 v10*lat_frac*(1-lon_frac)     + v11*lat_frac*lon_frac)
 
-    # Seturi 0 si 3 au valori de ordinul foF2 (~5-15 MHz)
-    # Seturi 1 si 2 sunt coeficienti de corectie (mici)
-    # M3000 tipic: 2.8-4.2; se obtine prin impartire la foF2?
-    # Verificam: set0 ~ 10.9 MHz la ecuator = foF2_noon sau MUF(3000)?
-    # Daca e MUF(3000): M3000 = MUF(3000)/foF2 ~ 10.9/5.5 ~ 2.0 (prea mic)
-    # Probabil set0 = foF2 de la amiaza si set3 = foF2 de noapte
+    # Sets 0 and 3 have values of the order of foF2 (~5-15 MHz)
+    # Sets 1 and 2 are small correction coefficients
+    # Typical M3000: 2.8-4.2; obtained by dividing by foF2?
+    # Check: set0 ~ 10.9 MHz at equator = foF2_noon or MUF(3000)?
+    # If MUF(3000): M3000 = MUF(3000)/foF2 ~ 10.9/5.5 ~ 2.0 (too small)
+    # Likely set0 = noon foF2 and set3 = night foF2
 
-    # Folosim modelul analitic care e verificat
+    # Using the verified analytic model
     return _m3000_analytic(lat_deg, lon_deg, ut_hour, month)
 
 
 def _m3000_analytic(lat_deg, lon_deg, ut_hour, month):
     """Model analitic M(3000)F2 bazat pe CCIR handbook."""
-    # M3000 variaza intre ~2.8 (noapte, latitudini inalte) si ~4.2 (zi, ecuator)
-    # Media: ~3.2 la latitudini medii
+    # M3000 ranges from ~2.8 (night, high latitudes) to ~4.2 (day, equator)
+    # Mean: ~3.2 at mid-latitudes
     lat_abs = abs(lat_deg)
 
-    # Baza: dependent de latitudine
+    # Base value: latitude-dependent
     if lat_abs < 30:
         m_base = 3.4
     elif lat_abs < 60:
@@ -447,7 +447,7 @@ def _m3000_analytic(lat_deg, lon_deg, ut_hour, month):
                      7:0.08, 8:0.05, 9:0.0, 10:-0.02, 11:-0.05, 12:-0.1}
     m_base += season_months.get(month, 0)
 
-    # Variatie diurna mica (+/- 0.15)
+    # Small diurnal variation (+/- 0.15)
     lst = (ut_hour + lon_deg/15.0) % 24
     diurnal = 0.12 * math.sin(math.radians((lst - 6) * 15))
 
@@ -482,7 +482,7 @@ def path_geometry(dist_km, h_km=F2_HEIGHT):
     # Unghi elevatie (formula ITU-R P.533 Annex 1)
     delta = d_half / EARTH_R  # unghi la centrul pamantului (rad)
 
-    # Calcul unghi elevatie
+    # Elevation angle calculation
     numer = h_km - EARTH_R*(1/math.cos(delta) - 1)
     denom = EARTH_R * math.tan(delta)
     if denom > 0.01:
@@ -498,7 +498,7 @@ def path_geometry(dist_km, h_km=F2_HEIGHT):
     return n, elev_deg, inc_deg, slant_km
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 4. MUF CALCUL
+# 4. MUF CALCULATION
 # ─────────────────────────────────────────────────────────────────────────────
 
 def calc_muf(foF2, dist_km, m3000, k_index):
@@ -521,14 +521,14 @@ def calc_muf(foF2, dist_km, m3000, k_index):
         return foF2_k  # NVIS
 
     if d <= 3000:
-        # Formula standard M(3000)F2 cu factor calibrare 0.87
+        # Standard M(3000)F2 formula with calibration factor 0.87
         muf = (foF2_k + (foF2_k * m - foF2_k) * (d / 3000.0)) * 0.87
     else:
-        # Multi-hop: un hop F2 acopera max 2000km
+        # Multi-hop: one F2 hop covers max 2000 km
         n_hops  = max(2, _m.ceil(d / 2000.0))
         d_hop   = d / n_hops
         muf_hop = (foF2_k + (foF2_k * m - foF2_k) * (d_hop / 3000.0)) * 0.87
-        # Absorbtie D-layer per hop suplimentar: -35% per hop
+        # D-layer absorption per additional hop: -35% per hop
         abs_factor = max(0.35, 1.0 - (n_hops - 1) * 0.35)
         muf = muf_hop * abs_factor
 
@@ -552,14 +552,14 @@ def d_absorption(freq_mhz, chi_deg, ssn, n_hops, k_index, slant_km):
     zenith_f = cos_chi ** 1.3
     freq_f   = max(0.01, freq_mhz ** 2)
 
-    # Drumul prin D-layer: 40km / sin(elev)
-    # slant_km e distanta la ionosfera F2 - din el extrapolam elev
+    # Path through D-layer: 40km / sin(elev)
+    # slant_km is the distance to F2 layer — used to estimate elevation
     # elev ~ atan(h_F2 / slant) aproximat
-    # Mai simplu: D_path = 40 / sin(elev) unde elev ~ asin(h_F2/slant)
+    # Simplified: D_path = 40 / sin(elev) where elev ~ asin(h_F2/slant)
     h_f2 = 300.0
     sin_elev = max(0.1, h_f2 / max(h_f2, slant_km))
-    d_path_km = 40.0 / sin_elev  # drum prin D-layer per hop
-    path_f = d_path_km / 300.0   # normalizat la 300km referinta
+    d_path_km = 40.0 / sin_elev  # path through D-layer per hop
+    path_f = d_path_km / 300.0   # normalised to 300km reference
 
     absorption = k * solar_f * zenith_f / freq_f * n_hops * path_f
 
@@ -568,7 +568,7 @@ def d_absorption(freq_mhz, chi_deg, ssn, n_hops, k_index, slant_km):
     return max(0.0, round(absorption + storm, 2))
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 6. LUF CALCUL
+# 6. LUF CALCULATION
 # ─────────────────────────────────────────────────────────────────────────────
 
 def calc_luf(absorption_db, power_w, antenna, mode, dist_km):
@@ -579,17 +579,17 @@ def calc_luf(absorption_db, power_w, antenna, mode, dist_km):
 
     base_luf = 0.8 + absorption_db * 0.15
 
-    # Ajustare putere/antena
+    # Power/antenna adjustment
     luf = base_luf * (10 ** (-margin/40.0))
 
-    # Ajustare mod
+    # Mode adjustment
     mode_adj = {"FT8":-0.3, "CW":-0.2, "SSB":0.0, "AM":0.3}.get(mode, 0.0)
     luf += mode_adj
 
     return max(0.5, round(luf, 2))
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 7. SNR CALCUL (ITU-R P.533)
+# 7. SNR CALCULATION (ITU-R P.533)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _antenna_gain(antenna, elev_deg):
@@ -609,39 +609,39 @@ def _antenna_gain(antenna, elev_deg):
 def calc_snr(power_w, freq_mhz, dist_km, n_hops, elev_deg,
              absorption_db, antenna, mode):
     """SNR in dB."""
-    # ERP
+    # Effective radiated power
     erp_dbw = 10*math.log10(max(0.1, power_w))
     erp_dbw += _antenna_gain(antenna, elev_deg) - 2.15
 
-    # Pierdere de cale
+    # Path loss
     fsl = 32.4 + 20*math.log10(max(1,dist_km)) + 20*math.log10(freq_mhz)
 
-    # Castig de focalizare ionosferica
+    # Ionospheric focusing gain
     focusing = 3.0 if n_hops == 1 else 1.5
 
-    # Semnal receptionat (dBW/Hz)
+    # Received signal (dBW/Hz)
     rx_dbw = erp_dbw - fsl - absorption_db + focusing
 
-    # Zgomot ITU-R P.372 (rural linistit)
+    # Noise ITU-R P.372 (quiet rural)
     fa = 75.0 - 30.0*math.log10(max(0.5, freq_mhz))
     noise_dbw_hz = -174.0 - 30.0 + fa  # dBW/Hz
 
-    # Latime de banda efectiva
+    # Effective bandwidth
     bw = {"SSB":2400, "CW":250, "FT8":50, "AM":6000}.get(mode, 2400)
     noise_dbw = noise_dbw_hz + 10*math.log10(bw)
 
-    # Sensibilitate mod
+    # Mode sensitivity
     mode_sens = {"FT8":-24, "CW":-10, "SSB":0, "AM":10}.get(mode, 0)
 
     return rx_dbw - noise_dbw - mode_sens
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 8. FIABILITATE (model statistic VOACAP-like)
+# 8. RELIABILITY (VOACAP-like statistical model)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def calc_reliability(snr, freq, muf, luf):
     """Fiabilitate 0-99% din probabilitatile combinate MUF/LUF/SNR."""
-    # Probabilitate MUF (distributie log-normala, sigma~10%)
+    # MUF probability (log-normal distribution, sigma~10%)
     if muf <= 0: return 0
     muf_r = freq / muf
     if   muf_r > 1.20: p_muf = max(0, 5 - (muf_r-1.20)*80)
@@ -649,14 +649,14 @@ def calc_reliability(snr, freq, muf, luf):
     elif muf_r > 0.85: p_muf = 50 + 45*(1.05-muf_r)/(-0.20) # creste spre MUF optim
     else:              p_muf = 95.0
 
-    # Zona optima: FOT = 0.85*MUF
+    # Optimum zone: FOT = 0.85*MUF
     if 0.80 <= muf_r <= 0.95:
         p_muf = 95.0
     elif 0.70 <= muf_r < 0.80:
         p_muf = 95.0 - (0.80-muf_r)*50
     p_muf = max(0, min(99, p_muf))
 
-    # Probabilitate LUF
+    # LUF probability
     if luf <= 0:
         p_luf = 99.0
     else:
@@ -666,7 +666,7 @@ def calc_reliability(snr, freq, muf, luf):
         else:              p_luf = min(99, 50 + 49*(luf_r-1.0)/2.0)
     p_luf = max(0, min(99, p_luf))
 
-    # Probabilitate SNR (distributie normala, sigma~8dB)
+    # SNR probability (normal distribution, sigma~8dB)
     if   snr > 40:  p_snr = 99.0
     elif snr > 15:  p_snr = 80 + 19*(snr-15)/25.0
     elif snr > 0:   p_snr = 50 + 30*(snr/15.0)
@@ -674,7 +674,7 @@ def calc_reliability(snr, freq, muf, luf):
     else:           p_snr = max(0, 5 + (snr+15)*0.3)
     p_snr = max(0, min(99, p_snr))
 
-    # Fiabilitate combinata
+    # Combined reliability
     rel = (p_muf/100.0) * (p_luf/100.0) * (p_snr/100.0) * 100.0
     return int(min(99, max(0, rel)))
 
@@ -718,7 +718,7 @@ def calculate_propagation(tx_lat, tx_lon, rx_lat, rx_lon,
     # Geometrie fixa
     n_hops, elev_deg, inc_deg, slant_km = path_geometry(dist_km)
 
-    # Corecrie SFI -> SSN efectiv (daca SFI e disponibil)
+    # SFI -> effective SSN correction (if SFI is available)
     ssn_eff = ssn + max(0, (sfi - 70) * 0.5)
 
     results = []
@@ -726,30 +726,30 @@ def calculate_propagation(tx_lat, tx_lon, rx_lat, rx_lon,
         f      = b["freq"]
         hourly = []
 
-        # Referinta foF2 la pranz pentru ancorare GIRO
+        # Noon foF2 reference for GIRO anchoring
         _fof2_ref_cp = (_interp_table(ssn_eff, month, 12, mid_lat, mid_lon)[0]
                         if (_table_data is not None or _load_table())
                         else ccir_foF2(mid_lat, mid_lon, 12, month, ssn_eff, doy))
 
         for hr in range(24):
-            # foF2 la midpoint
+            # foF2 at path midpoint
             foF2  = (_interp_table(ssn_eff, month, hr, mid_lat, mid_lon)[0]
                         if (_table_data is not None or _load_table())
                         else ccir_foF2(mid_lat, mid_lon, hr, month, ssn_eff, doy))
 
-            # M(3000)F2
+            # M(3000)F2 factor factor
             m3000 = (_interp_table(ssn_eff, month, hr, mid_lat, mid_lon)[1]
                         if _table_data is not None
                         else ccir_M3000(mid_lat, mid_lon, hr, month, ssn_eff))
 
-            # Ancorare la foF2 real GIRO (pastram variatia diurna relativa)
+            # Anchor to real GIRO foF2 (preserve relative diurnal variation)
             if float(avg_fof2) > 3.0 and _fof2_ref_cp > 0:
                 foF2 = float(avg_fof2) * (foF2 / _fof2_ref_cp)
 
             # MUF
             muf = calc_muf(foF2, dist_km, m3000, k_index)
 
-            # Unghi zenital solar la midpoint
+            # Solar zenith angle at path midpoint
             chi = _solar_zenith(mid_lat, mid_lon, hr, doy)
 
             # Absorbtia D-layer
@@ -765,9 +765,9 @@ def calculate_propagation(tx_lat, tx_lon, rx_lat, rx_lon,
             # Fiabilitate
             rel = calc_reliability(snr, f, muf, luf)
 
-            # NVIS: corectie speciala pentru distante scurte (<500km)
+            # NVIS: special correction for short distances (<500 km)
             if dist_km < 500 and f <= 10.0:
-                # Propagare NVIS: frecventa trebuie sa fie sub foF2
+                # NVIS propagation: frequency must be below foF2
                 if f < foF2 * 0.90:
                     # Sub foF2: conditii bune NVIS
                     nvis_boost = min(25, int((foF2 - f) * 6))
@@ -776,7 +776,7 @@ def calculate_propagation(tx_lat, tx_lon, rx_lat, rx_lon,
                     # Peste foF2: semnalul scapa in spatiu
                     rel = min(rel, 8)
 
-            # Corectie 80m zi (strat D)
+            # 80m daytime correction (D-layer)
             if f < 4.5 and 7 <= hr <= 17:
                 rel = min(rel, max(0, rel - int(absorption * 2)))
 
@@ -808,12 +808,12 @@ def get_muf_luf_data(tx_lat, tx_lon, rx_lat, rx_lon, ssn, sfi, k_index, avg_fof2
 
     muf_list, luf_list, fot_list = [], [], []
 
-    # Log diagnostic: variatie diurna foF2
+    # Diagnostic log: foF2 diurnal variation
     _fof2_0  = (_interp_table(ssn_eff, month, 0,  mid_lat, mid_lon)[0] if (_table_data is not None or _load_table()) else ccir_foF2(mid_lat, mid_lon, 0,  month, ssn_eff, doy))
     _fof2_12 = (_interp_table(ssn_eff, month, 12, mid_lat, mid_lon)[0] if _table_data is not None else ccir_foF2(mid_lat, mid_lon, 12, month, ssn_eff, doy))
     print(f"[VOACAP] foF2 variatie: HR0={_fof2_0:.2f} HR12={_fof2_12:.2f} diff={_fof2_12-_fof2_0:.2f} MHz (mid={mid_lat:.0f}N/{mid_lon:.0f}E, luna={month})")
 
-    # Calculam foF2 la pranz ca referinta pentru ancorare GIRO
+    # Compute noon foF2 as reference for GIRO anchoring
     _fof2_ref = (_interp_table(ssn_eff, month, 12, mid_lat, mid_lon)[0]
                  if (_table_data is not None or _load_table())
                  else ccir_foF2(mid_lat, mid_lon, 12, month, ssn_eff, doy))
@@ -826,8 +826,8 @@ def get_muf_luf_data(tx_lat, tx_lon, rx_lat, rx_lon, ssn, sfi, k_index, avg_fof2
                         if _table_data is not None
                         else ccir_M3000(mid_lat, mid_lon, hr, month, ssn_eff))
 
-        # Ancorare la foF2 real de la GIRO (daca e disponibil)
-        # Pastram variatia diurna relativa, dar scalăm la valoarea reala
+        # Anchor to real foF2 from GIRO (if available)
+        # Preserve relative diurnal shape, scale to real measured value
         if float(avg_fof2) > 3.0 and _fof2_ref > 0:
             foF2 = float(avg_fof2) * (foF2 / _fof2_ref)
 
@@ -842,7 +842,7 @@ def get_muf_luf_data(tx_lat, tx_lon, rx_lat, rx_lon, ssn, sfi, k_index, avg_fof2
         luf_list.append(round(luf, 2))
         fot_list.append(round(fot, 2))
 
-    # Smoothing simplu pe MUF/FOT (fereastra 3 ore) pentru curbe mai netede
+    # Simple 3-hour smoothing on MUF/FOT for smoother curves
     def smooth3(lst):
         n = len(lst)
         result = []
