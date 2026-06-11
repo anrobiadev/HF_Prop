@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <g fill="none" stroke="rgb(255,0,255)" stroke-width="20" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Radio waves -->
+    <path d="M256 80 C330 80 380 130 380 130" />
+    <path d="M256 140 C310 140 350 180 350 180" />
+    <path d="M256 200 C290 200 320 230 320 230" />
+    <!-- Tower -->
+    <path d="M256 240 L216 432" />
+    <path d="M256 240 L296 432" />
+    <path d="M216 432 L296 432" />
+    <path d="M226 360 L286 360" />
+    <path d="M236 300 L276 300" />
+  </g>
+</svg>
