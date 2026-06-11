@@ -183,4 +183,4 @@ MIT — see [LICENSE](LICENSE) for details.
 
 ---
 
-*Developed by Robert, YO7ZRO · Orșova, Romania · 73!*
+*Developed by YO7ZRO · 73!*
