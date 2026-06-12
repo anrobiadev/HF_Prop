@@ -127,11 +127,10 @@ Copy the result to `app/src/main/python/DVoaData/`. Without this file the app fa
 
 ## GIRO Data Notes
 
-The GIRO FastChar API (`lgdc.uml.edu/fastchar/getbest`) requires a residential or mobile IP. Datacenter IPs receive HTTP 403 — no proxy is needed from a phone.
+The GIRO FastChar API requires a residential or mobile IP. Datacenter IPs receive HTTP 403 — no proxy is needed from a phone.
 
 - Separate requests per characteristic (`foF2` and `MUF(D)` fetched individually)
 - Minimum 2-second delay between requests per station (LGDC policy)
-- Date format: `fromDate=2026%2F06%2F10+05%3A00%3A00`
 
 ---
 
