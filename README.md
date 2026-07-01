@@ -170,6 +170,11 @@ Areas where help is particularly welcome:
 MIT — see [LICENSE](LICENSE) for details.
 
 ---
+A short comparison with VOACAP engine
+[Method comparison with VOACAP](VOACAP_COMPARISON.md)
+
+---
+
 
 ## Acknowledgements
 
